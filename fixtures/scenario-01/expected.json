@@ -1,0 +1,16 @@
+{
+  "requirement": {
+    "clause_number": "4.2",
+    "data_class": "customer_data",
+    "resource_selector": "tag:data=customer",
+    "allowed_principals": ["arn:aws:iam::111122223333:role/DataOps"]
+  },
+  "findings": [
+    {
+      "rule_id": "EXCESS_ACCESS",
+      "identity_arn": "arn:aws:iam::111122223333:role/DevAdmin",
+      "resource_arn": "arn:aws:s3:::acme-customer-data",
+      "severity": "high"
+    }
+  ]
+}

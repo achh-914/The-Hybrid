@@ -1,0 +1,17 @@
+{
+  "account_id": "111122223333",
+  "roles": [
+    {"arn": "arn:aws:iam::111122223333:role/DataOps", "policies": ["DataOpsS3Read"]},
+    {"arn": "arn:aws:iam::111122223333:role/DevAdmin", "policies": ["AdminAll"]},
+    {"arn": "arn:aws:iam::111122223333:role/Billing", "policies": ["BillingView"]}
+  ],
+  "policies": {
+    "DataOpsS3Read": {"Statement": [{"Effect": "Allow", "Action": ["s3:GetObject", "s3:ListBucket"], "Resource": ["arn:aws:s3:::acme-customer-data", "arn:aws:s3:::acme-customer-data/*"]}]},
+    "AdminAll": {"Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}]},
+    "BillingView": {"Statement": [{"Effect": "Allow", "Action": ["aws-portal:ViewBilling"], "Resource": "*"}]}
+  },
+  "buckets": [
+    {"arn": "arn:aws:s3:::acme-customer-data", "tags": {"data": "customer"}},
+    {"arn": "arn:aws:s3:::acme-logs", "tags": {"data": "logs"}}
+  ]
+}
