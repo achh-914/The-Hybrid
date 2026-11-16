@@ -15,6 +15,10 @@ The same IAM policy can be harmless under one contract and a breach of another. 
 
 > **Does our real cloud infrastructure comply with the security commitments we signed?**
 
+## Architecture
+
+![THE HYBRID Architecture](docs/architecture.svg)
+
 ## How it works
 
 ```mermaid
@@ -85,7 +89,7 @@ Python · Pydantic · NetworkX · LLM agents · AWS IAM / S3 (read-only) · Fast
 ```
 the-hybrid/
 ├── src/            # application code
-├── docs/           # architecture and design notes
+├── docs/           # architecture.svg and design notes
 ├── tests/          # unit and integration tests
 └── data/           # synthetic sample data (never real customer data)
 ```
