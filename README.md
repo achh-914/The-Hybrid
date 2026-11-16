@@ -1,10 +1,20 @@
-# THE HYBRID
+<p align="center">
+  <img src="docs/hybrid-banner.svg" alt="THE HYBRID" width="520">
+</p>
 
-**Contract-aware cloud security intelligence.**
-THE HYBRID links the security obligations a company has signed in its contracts to the access that actually exists in its AWS environment, and proves every finding with evidence.
+<h3 align="center">Contract-aware cloud security, investigated by AI agents. Decided by people.</h3>
 
-> **Status:** early development (pre-MVP). Architecture and data model are being defined. Nothing here is production-ready.
+<p align="center">
+  Vendora reads the contracts. AEGIS maps the cloud. THE HYBRID checks whether what was promised is what is real, shows the evidence, and holds any change until a person approves.
+</p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/status-early%20development-red">
+  <img src="https://img.shields.io/badge/python-3.12-blue">
+  <img src="https://img.shields.io/badge/API-FastAPI-009688">
+  <img src="https://img.shields.io/badge/AWS-read--only-orange">
+  <img src="https://img.shields.io/badge/license-all%20rights%20reserved-6d28d9">
+</p>
 ---
 
 ## The problem
