@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/hybrid-banner.svg" alt="THE HYBRID" width="520">
+<img src="docs/logo.svg" alt="THE HYBRID" width="520">
 </p>
 
 <h3 align="center">Contract-aware cloud security, investigated by AI agents. Decided by people.</h3>
