@@ -14,6 +14,7 @@
   <img src="https://img.shields.io/badge/API-FastAPI-009688">
   <img src="https://img.shields.io/badge/AWS-read--only-orange">
   <img src="https://img.shields.io/badge/license-all%20rights%20reserved-6d28d9">
+  <img src="https://github.com/achh-914/The-Hybrid/actions/workflows/ci.yml/badge.svg">
 </p>
 ---
 
