@@ -100,9 +100,9 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 - [x] **Phase 1: Integration.** AEGIS adapter and CI integration.
 - [x] **Phase 2: Unified data model.**
 - [x] **Phase 3: Cross-domain engine.** Clause-to-infrastructure rules on synthetic AWS scenarios.
-- [~] **Phase 4: AI investigation.** Extraction, remediation advice and reports done; investigation agents pending.
+- [ ] **Phase 4: AI investigation.** Extraction, remediation advice and reports done; investigation agents pending.
 - [ ] **Phase 5: Dashboard.** Contracts, resources, risks, evidence and approvals.
-- [~] **Phase 6: Testing and deployment.** CI in place; production hardening below.
+- [ ] **Phase 6: Testing and deployment.** CI in place; production hardening below.
 
 **Next up**
 
