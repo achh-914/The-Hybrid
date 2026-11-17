@@ -35,3 +35,38 @@ def test_invalid_json_raises():
 def test_empty_response_raises():
     with pytest.raises(ValueError):
         GeminiClient(client=FakeClient(""), model="m").complete_json("p", "d", {})
+
+
+class TransientError(Exception):
+    code = 503
+
+
+class FlakyModels:
+    def __init__(self, failures, text):
+        self.failures = failures
+        self.text = text
+        self.calls = 0
+
+    def generate_content(self, **kwargs):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise TransientError("high demand")
+        return type("Response", (), {"text": self.text})()
+
+
+def flaky_client(failures):
+    return type("C", (), {"models": FlakyModels(failures, '{"ok": true}')})()
+
+
+def test_retries_on_503_then_succeeds():
+    client = flaky_client(2)
+    out = GeminiClient(client=client, model="m", sleep=lambda s: None).complete_json("p", "d", {})
+    assert out == {"ok": True}
+    assert client.models.calls == 3
+
+
+def test_gives_up_after_all_retries():
+    client = flaky_client(99)
+    with pytest.raises(TransientError):
+        GeminiClient(client=client, model="m", retries=2, sleep=lambda s: None).complete_json("p", "d", {})
+    assert client.models.calls == 3
