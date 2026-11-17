@@ -2,6 +2,7 @@ import os
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from .scans import register_scan_routes
 from pydantic import BaseModel, ConfigDict, Field
 
 from .extraction import ExtractionError, extract_proposals
@@ -93,6 +94,7 @@ def create_app(store: Store, llm_factory=None) -> FastAPI:
     def list_audit(tenant_id: Tenant):
         return [e.model_dump(mode="json") for e in store.list_audit(tenant_id)]
 
+    register_scan_routes(app, store, current_tenant)
     return app
 
 

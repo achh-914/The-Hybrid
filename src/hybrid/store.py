@@ -21,6 +21,14 @@ CREATE TABLE IF NOT EXISTS requirements (
     PRIMARY KEY (tenant_id, id));
 CREATE TABLE IF NOT EXISTS audit (
     seq INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id TEXT NOT NULL, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS snapshots (
+    tenant_id TEXT NOT NULL, id TEXT NOT NULL, sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL, body TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, id));
+CREATE TABLE IF NOT EXISTS scans (
+    tenant_id TEXT NOT NULL, id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
+    created_at TEXT NOT NULL, report_md TEXT NOT NULL, report_json TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, id));
 """
 
 
