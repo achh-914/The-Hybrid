@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner-conduct.svg" alt="Code of Conduct" width="100%">
+<img src="https://github.com/achh-914/The-Hybrid/raw/main/docs/banner-conduct.svg" alt="Code of Conduct" width="100%">
 </p>
 
 <p align="center">
