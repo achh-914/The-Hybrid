@@ -7,6 +7,7 @@ from pathlib import Path
 from .adapters.aegis_adapter import load_paths
 from .graph_rules import target_of, unauthorized_access
 from .models import Requirement
+from .remediation import advise
 
 
 def scan(requirements, snapshot):
@@ -44,6 +45,7 @@ def render_report(results, snapshot) -> str:
         ]
         for f in findings:
             p = by_id[f.attack_path_id]
+            advice = advise(snapshot, p)
             lines += [
                 f"### [{f.severity.value.upper()}] {p.source}",
                 "",
@@ -51,7 +53,8 @@ def render_report(results, snapshot) -> str:
                 f"- Why: {'; '.join(p.reasons)}",
                 "- Evidence:",
                 *[f"  - {e.kind.value}: `{e.ref}` (sha256 {e.hash})" for e in f.evidence],
-                "- Recommendation: apply least privilege and remove this path.",
+                f"- Suggested change: {advice.change}",
+                f"- What-if: {advice.after}",
                 "- Action: human approval required before any change.",
                 "",
             ]

@@ -41,3 +41,13 @@ def test_scan_is_clean_when_every_source_is_allowed(tmp_path):
     write_requirements(req, sources)
     assert main([str(req), "--snapshot", str(SNAP), "--out", str(out)]) == 0
     assert "no unauthorized access path" in out.read_text()
+
+
+def test_report_has_suggested_change_and_what_if(tmp_path):
+    req = tmp_path / "requirements.json"
+    out = tmp_path / "report.md"
+    write_requirements(req, ["role:DataOps"])
+    main([str(req), "--snapshot", str(SNAP), "--out", str(out)])
+    report = out.read_text()
+    assert "Suggested change:" in report
+    assert "What-if:" in report

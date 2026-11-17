@@ -16,7 +16,11 @@ class AccessPath:
     reasons: tuple[str, ...]
 
 
-def _shortest(graph, start: str, target: str) -> AccessPath | None:
+def load_graph(snapshot_path):
+    return load_snapshot(str(snapshot_path))
+
+
+def shortest_path(graph, start: str, target: str) -> AccessPath | None:
     queue = deque([(start, (start,), ())])
     seen = {start}
     while queue:
@@ -33,14 +37,17 @@ def _shortest(graph, start: str, target: str) -> AccessPath | None:
     return None
 
 
-def load_paths(snapshot_path, target: str) -> list[AccessPath]:
-    graph = load_snapshot(str(snapshot_path))
+def paths_to(graph, target: str) -> list[AccessPath]:
     if target not in graph.nodes:
         raise ValueError(f"{target} not found in snapshot")
     paths = []
     for node_id, node in graph.nodes.items():
         if node.type in SOURCE_TYPES:
-            p = _shortest(graph, node_id, target)
+            p = shortest_path(graph, node_id, target)
             if p:
                 paths.append(p)
     return paths
+
+
+def load_paths(snapshot_path, target: str) -> list[AccessPath]:
+    return paths_to(load_graph(snapshot_path), target)
