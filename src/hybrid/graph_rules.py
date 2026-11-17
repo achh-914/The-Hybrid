@@ -2,7 +2,14 @@ import hashlib
 import json
 
 from .adapters.aegis_adapter import AccessPath
-from .models import Evidence, EvidenceKind, Finding, Requirement, Severity
+from .models import (
+    Evidence,
+    EvidenceKind,
+    Finding,
+    Requirement,
+    RequirementStatus,
+    Severity,
+)
 
 
 def _sha(obj) -> str:
@@ -17,6 +24,9 @@ def target_of(requirement: Requirement) -> str:
 
 
 def unauthorized_access(requirement: Requirement, paths: list[AccessPath]) -> list[Finding]:
+    if requirement.status != RequirementStatus.APPROVED:
+        raise ValueError("requirement must be approved before it is checked")
+
     allowed = set(requirement.allowed_principals)
     findings = []
     for p in paths:

@@ -6,7 +6,7 @@ pytest.importorskip("aegis")
 
 from hybrid.adapters.aegis_adapter import load_paths  # noqa: E402
 from hybrid.graph_rules import target_of, unauthorized_access  # noqa: E402
-from hybrid.models import Requirement  # noqa: E402
+from hybrid.models import Requirement, RequirementStatus  # noqa: E402
 
 SNAP = Path(__file__).parent.parent / "fixtures" / "scenario-02" / "iam_real.json"
 
@@ -19,6 +19,7 @@ def requirement():
         data_class="customer_data",
         resource_selector="bucket:customer-data",
         allowed_principals=("role:admin-role",),
+        status=RequirementStatus.APPROVED,
     )
 
 
