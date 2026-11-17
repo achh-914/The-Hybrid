@@ -15,5 +15,5 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e ".[dev]"
-      - run: pip install "git+https://github.com/achh-914/AEGIS.git"
+      - run: pip install "git+https://github.com/achh-914/AEGIS.git@9ac07f1fa342025a8dec22b09ed1844444b4a03c"
       - run: pytest -rs
