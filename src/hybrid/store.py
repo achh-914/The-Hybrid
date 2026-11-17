@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 import sqlite3
 import threading
 
+from .auth import Principal, Role
 from .models import Requirement
 from .requirements import AuditEntry, RequirementProposal
 
@@ -12,7 +14,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS tenants (
     id TEXT PRIMARY KEY, name TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS api_keys (
-    key_hash TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id));
+    key_hash TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
+    user_id TEXT NOT NULL, role TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS proposals (
     tenant_id TEXT NOT NULL, id TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL,
     PRIMARY KEY (tenant_id, id));
@@ -31,6 +34,8 @@ CREATE TABLE IF NOT EXISTS scans (
     PRIMARY KEY (tenant_id, id));
 """
 
+_USER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}$")
+
 
 def _hash(api_key: str) -> str:
     return hashlib.sha256(api_key.encode()).hexdigest()
@@ -44,23 +49,70 @@ class Store:
         self._lock = threading.Lock()
         with self._lock:
             self._db.executescript(SCHEMA)
+            self._migrate_api_keys()
             self._db.commit()
 
+    def _migrate_api_keys(self) -> None:
+        """Databases created before roles existed: their keys were all-powerful,
+        so they keep working as admin. New keys always get an explicit role."""
+        cols = {r[1] for r in self._db.execute("PRAGMA table_info(api_keys)")}
+        if "user_id" not in cols:
+            self._db.execute(
+                "ALTER TABLE api_keys ADD COLUMN user_id TEXT NOT NULL DEFAULT 'admin'"
+            )
+        if "role" not in cols:
+            self._db.execute(
+                "ALTER TABLE api_keys ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'"
+            )
+
     def create_tenant(self, name: str) -> tuple[str, str]:
+        """Create a tenant and its first key, which is an admin key."""
         tenant_id = "t-" + secrets.token_hex(6)
         api_key = "hyb_" + secrets.token_urlsafe(32)
         with self._lock:
             self._db.execute("INSERT INTO tenants VALUES (?, ?)", (tenant_id, name))
-            self._db.execute("INSERT INTO api_keys VALUES (?, ?)", (_hash(api_key), tenant_id))
+            self._db.execute(
+                "INSERT INTO api_keys (key_hash, tenant_id, user_id, role) VALUES (?, ?, ?, ?)",
+                (_hash(api_key), tenant_id, "admin", Role.ADMIN.value),
+            )
             self._db.commit()
         return tenant_id, api_key
 
-    def tenant_for_key(self, api_key: str) -> str | None:
+    def create_key(self, tenant_id: str, user_id: str, role: Role | str) -> str:
+        """Create an API key for a user of an existing tenant. Shown once, stored hashed."""
+        role = Role(role)
+        if not _USER_ID.fullmatch(user_id):
+            raise ValueError("invalid user_id")
+        api_key = "hyb_" + secrets.token_urlsafe(32)
+        with self._lock:
+            exists = self._db.execute(
+                "SELECT 1 FROM tenants WHERE id = ?", (tenant_id,)
+            ).fetchone()
+            if exists is None:
+                raise ValueError("unknown tenant")
+            self._db.execute(
+                "INSERT INTO api_keys (key_hash, tenant_id, user_id, role) VALUES (?, ?, ?, ?)",
+                (_hash(api_key), tenant_id, user_id, role.value),
+            )
+            self._db.commit()
+        return api_key
+
+    def principal_for_key(self, api_key: str) -> Principal | None:
         with self._lock:
             row = self._db.execute(
-                "SELECT tenant_id FROM api_keys WHERE key_hash = ?", (_hash(api_key),)
+                "SELECT tenant_id, user_id, role FROM api_keys WHERE key_hash = ?",
+                (_hash(api_key),),
             ).fetchone()
-        return row[0] if row else None
+        if row is None:
+            return None
+        try:
+            return Principal(tenant_id=row[0], user_id=row[1], role=Role(row[2]))
+        except ValueError:
+            return None  # unknown role in the database: fail closed
+
+    def tenant_for_key(self, api_key: str) -> str | None:
+        principal = self.principal_for_key(api_key)
+        return principal.tenant_id if principal else None
 
     def add_proposals(self, tenant_id: str, proposals: list[RequirementProposal]) -> None:
         with self._lock:
