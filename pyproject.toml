@@ -5,7 +5,9 @@ requires-python = ">=3.12"
 dependencies = ["pydantic>=2.7"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "httpx"]
+gemini = ["google-genai"]
+api = ["fastapi", "uvicorn"]
 
 [build-system]
 requires = ["setuptools>=68"]
