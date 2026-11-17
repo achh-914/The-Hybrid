@@ -1,0 +1,46 @@
+from __future__ import annotations
+
+from collections import deque
+from dataclasses import dataclass
+
+from aegis.loader import load_snapshot
+
+SOURCE_TYPES = {"iam_role", "internet", "external_account"}
+
+
+@dataclass(frozen=True)
+class AccessPath:
+    source: str
+    target: str
+    nodes: tuple[str, ...]
+    reasons: tuple[str, ...]
+
+
+def _shortest(graph, start: str, target: str) -> AccessPath | None:
+    queue = deque([(start, (start,), ())])
+    seen = {start}
+    while queue:
+        cur, nodes, reasons = queue.popleft()
+        for edge in graph.neighbors(cur):
+            if edge.dst in seen:
+                continue
+            n = nodes + (edge.dst,)
+            r = reasons + (f"{edge.kind}: {edge.reason}",)
+            if edge.dst == target:
+                return AccessPath(start, target, n, r)
+            seen.add(edge.dst)
+            queue.append((edge.dst, n, r))
+    return None
+
+
+def load_paths(snapshot_path, target: str) -> list[AccessPath]:
+    graph = load_snapshot(str(snapshot_path))
+    if target not in graph.nodes:
+        raise ValueError(f"{target} not found in snapshot")
+    paths = []
+    for node_id, node in graph.nodes.items():
+        if node.type in SOURCE_TYPES:
+            p = _shortest(graph, node_id, target)
+            if p:
+                paths.append(p)
+    return paths
