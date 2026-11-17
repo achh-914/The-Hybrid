@@ -119,3 +119,19 @@ This repository is proprietary. No permission is granted to use, copy, modify or
 
 - **AEGIS:** AWS IAM analysis and attack-path engine.
 - **VENDORA:** AI-powered procurement and contract document intelligence.
+
+---
+
+## Demo
+
+Run the full chain on the synthetic scenario (no AWS account needed):
+
+```bash
+# 1. M1: extract obligations from a contract (Gemini)
+python -m hybrid.extract_cli fixtures/scenario-01/contract.md > out/proposals.json
+
+# 2. M5: a human binds each obligation to technical identifiers
+python -m hybrid.review_cli out/proposals.json --reviewer reviewer-1
+
+# 3. M2-M4: check approved requirements against an IAM snapshot
+python -m hybrid.scan_cli out/requirements.json --snapshot fixtures/scenario-02/iam_real.json

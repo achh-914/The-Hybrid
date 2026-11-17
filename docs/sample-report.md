@@ -1,0 +1,33 @@
+# THE HYBRID: contract vs cloud report
+
+Snapshot: `fixtures/scenario-02/iam_real.json`
+
+Scope: identity policies and role chaining in the snapshot. Not evaluated: resource policies, SCPs, permission boundaries.
+
+## Clause `contract-4.2`
+
+- Protected resource: `bucket:customer-data`
+- Allowed by contract: `role:DataOps`
+- Result: 2 unauthorized access path(s)
+
+### [HIGH] role:app-role
+
+- Path: role:app-role -> role:admin-role -> s3:customer-data
+- Why: can_assume: iam:PassRole + ec2:RunInstances; can_access: s3:*
+- Evidence:
+  - clause: `contract-4.2` (sha256 602377ca2f7e78c7)
+  - graph_path: `role:app-role -> role:admin-role -> s3:customer-data` (sha256 dd4c401f8ac082bc)
+- Recommendation: apply least privilege and remove this path.
+- Action: human approval required before any change.
+
+### [HIGH] role:admin-role
+
+- Path: role:admin-role -> s3:customer-data
+- Why: can_access: s3:*
+- Evidence:
+  - clause: `contract-4.2` (sha256 602377ca2f7e78c7)
+  - graph_path: `role:admin-role -> s3:customer-data` (sha256 dcc663d21efe6961)
+- Recommendation: apply least privilege and remove this path.
+- Action: human approval required before any change.
+
+**Total findings: 2**
