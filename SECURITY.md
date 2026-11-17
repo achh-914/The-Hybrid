@@ -1,0 +1,73 @@
+<p align="center">
+  <img src="docs/banner-security.svg" alt="Security Policy" width="100%">
+</p>
+
+<p align="center">
+  <a href="README.md">Home</a> ·
+  <b>Security</b> ·
+  <a href="CONTRIBUTING.md">Contributing</a> ·
+  <a href="CODE_OF_CONDUCT.md">Code of Conduct</a> ·
+  <a href="LICENSE">License</a>
+</p>
+
+---
+
+THE HYBRID analyzes cloud permissions and contract data, so we treat security reports seriously.
+
+> [!IMPORTANT]
+> **Do not open a public issue or pull request for security problems.** Report privately using one of the channels below.
+
+## Reporting a vulnerability
+
+| Channel | How |
+|---|---|
+| **GitHub private reporting** | Open the **Security** tab of this repository and choose **Report a vulnerability**. |
+| **Email** | <SECURITY_EMAIL> |
+
+Please include:
+
+- A description of the issue and its impact
+- Steps to reproduce, or a proof of concept
+- The affected endpoint, file or version (commit hash if possible)
+- Whether any real customer data or credentials were involved
+
+## What to expect
+
+| Step | Target time |
+|---|---|
+| Acknowledgement | within **3 business days** |
+| Initial assessment | within **7 business days** |
+| Fix or mitigation plan | depends on severity, shared in the assessment |
+
+We keep you informed throughout and credit you on request once the issue is fixed.
+
+## Scope
+
+| In scope | Out of scope |
+|---|---|
+| Tenant isolation failures (one tenant reading or affecting another) | Issues that need physical access or a compromised device |
+| API key handling, authentication or authorization bypass | Denial of service through unrealistic request volumes |
+| Prompt injection through contract content that changes results or leaks data | Automated scanner output without a demonstrated impact |
+| Secrets exposure, injection flaws, insecure defaults | Social engineering |
+
+## Good-faith research
+
+Test only against your own deployment or data. Do not access, modify or exfiltrate data that is not yours, and do not test third-party services. We will not pursue action against researchers who follow this policy.
+
+> [!NOTE]
+> Never include real contracts, credentials or customer data in a report. Use redacted or synthetic samples.
+
+## Our security approach
+
+- AWS access is designed to be **read-only**.
+- Strict **tenant isolation** and role-based access on every endpoint.
+- API keys are stored **hashed** and shown once.
+- Contract text is treated as **untrusted input**, with injection tests in CI.
+
+## Supported versions
+
+The project is in active development. Only the latest commit on `main` receives security fixes.
+
+---
+
+<p align="center"><a href="README.md">← Back to README</a></p>
