@@ -10,6 +10,7 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict
 
 from .adapters.aegis_adapter import load_graph
+from .drift import compute_drift
 from .scan_cli import render_report, scan
 
 MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
@@ -99,3 +100,21 @@ def register_scan_routes(app, store, current_tenant):
         if format == "json":
             return json.loads(row[1])
         return PlainTextResponse(row[0], media_type="text/markdown")
+
+    @app.get("/scans/{old_id}/diff/{new_id}")
+    def diff_scans(old_id: str, new_id: str, tenant: str = Depends(current_tenant)):
+        rows = {}
+        with store._lock:
+            for sid in (old_id, new_id):
+                r = store._db.execute(
+                    "SELECT report_json FROM scans WHERE tenant_id = ? AND id = ?",
+                    (tenant, sid),
+                ).fetchone()
+                if not r:
+                    raise HTTPException(404, "scan not found")
+                rows[sid] = json.loads(r[0])["findings"]
+        return {
+            "old": old_id,
+            "new": new_id,
+            **compute_drift(rows[old_id], rows[new_id]),
+        }
