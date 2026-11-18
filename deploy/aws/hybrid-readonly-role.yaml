@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  THE HYBRID read-only role. Lets THE HYBRID read IAM and S3 configuration
+  metadata. It cannot read object data and cannot change anything.
+
+Parameters:
+  HybridAccountId:
+    Type: String
+    Description: AWS account ID that THE HYBRID runs in (provided by THE HYBRID)
+  ExternalId:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: Unique secret provided by THE HYBRID for your tenant
+
+Resources:
+  HybridReadOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: HybridReadOnlyRole
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${HybridAccountId}:root"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref ExternalId
+      Policies:
+        - PolicyName: HybridMetadataReadOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: IamMetadata
+                Effect: Allow
+                Action:
+                  - iam:GetAccountAuthorizationDetails
+                Resource: "*"
+              - Sid: S3ConfigurationOnly
+                Effect: Allow
+                Action:
+                  - s3:ListAllMyBuckets
+                  - s3:GetBucketPolicy
+                  - s3:GetBucketAcl
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:GetEncryptionConfiguration
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Description: Send this ARN to THE HYBRID
+    Value: !GetAtt HybridReadOnlyRole.Arn
