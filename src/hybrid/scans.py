@@ -34,9 +34,9 @@ def _validate_snapshot(body: str) -> None:
             raise ValueError("snapshot has no IAM roles")
 
 
-def register_scan_routes(app, store, current_tenant):
+def register_scan_routes(app, store, current_tenant, admin_tenant):
     @app.post("/snapshots", status_code=201)
-    async def upload_snapshot(request: Request, tenant: str = Depends(current_tenant)):
+    async def upload_snapshot(request: Request, tenant: str = Depends(admin_tenant)):
         raw = await request.body()
         if len(raw) > MAX_SNAPSHOT_BYTES:
             raise HTTPException(413, "snapshot too large")
@@ -57,7 +57,7 @@ def register_scan_routes(app, store, current_tenant):
         return {"id": sid, "sha256": sha}
 
     @app.post("/scans", status_code=201)
-    def run_scan(payload: ScanIn, tenant: str = Depends(current_tenant)):
+    def run_scan(payload: ScanIn, tenant: str = Depends(admin_tenant)):
         with store._lock:
             row = store._db.execute(
                 "SELECT body FROM snapshots WHERE tenant_id = ? AND id = ?",

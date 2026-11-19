@@ -2,6 +2,7 @@ import os
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from .auth import Principal, Role
 from .scans import register_scan_routes
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,16 +35,32 @@ def create_app(store: Store, llm_factory=None) -> FastAPI:
     factory = llm_factory or _default_llm
     app = FastAPI(title="THE HYBRID")
 
-    def current_tenant(x_api_key: str | None = Header(default=None)) -> str:
-        tenant_id = store.tenant_for_key(x_api_key) if x_api_key else None
-        if tenant_id is None:
+    def current_principal(x_api_key: str | None = Header(default=None)) -> Principal:
+        principal = store.principal_for_key(x_api_key) if x_api_key else None
+        if principal is None:
             raise HTTPException(status_code=401, detail="missing or invalid API key")
-        return tenant_id
+        return principal
+
+    def current_tenant(principal: Principal = Depends(current_principal)) -> str:
+        return principal.tenant_id
+
+    def require_roles(*allowed: Role):
+        def dependency(principal: Principal = Depends(current_principal)) -> Principal:
+            if principal.role not in allowed:
+                raise HTTPException(status_code=403, detail="insufficient role")
+            return principal
+
+        return dependency
+
+    def admin_tenant(principal: Principal = Depends(require_roles(Role.ADMIN))) -> str:
+        return principal.tenant_id
 
     Tenant = Annotated[str, Depends(current_tenant)]
+    ReviewerP = Annotated[Principal, Depends(require_roles(Role.REVIEWER, Role.ADMIN))]
 
     @app.post("/contracts", status_code=201)
-    def upload_contract(body: ContractIn, tenant_id: Tenant):
+    def upload_contract(body: ContractIn, principal: ReviewerP):
+        tenant_id = principal.tenant_id
         try:
             proposals = extract_proposals(body.text, factory(), tenant_id, body.contract_id)
         except ExtractionError as e:
@@ -61,7 +78,9 @@ def create_app(store: Store, llm_factory=None) -> FastAPI:
         ]
 
     @app.post("/proposals/{proposal_id}/approve")
-    def approve_proposal(proposal_id: str, approval: Approval, tenant_id: Tenant):
+    def approve_proposal(proposal_id: str, approval: Approval, principal: ReviewerP):
+        tenant_id = principal.tenant_id
+        approval = approval.model_copy(update={"reviewer": principal.user_id})
         found = store.get_proposal(tenant_id, proposal_id)
         if found is None:
             raise HTTPException(status_code=404, detail="proposal not found")
@@ -74,14 +93,15 @@ def create_app(store: Store, llm_factory=None) -> FastAPI:
         return requirement.model_dump(mode="json")
 
     @app.post("/proposals/{proposal_id}/reject")
-    def reject_proposal(proposal_id: str, body: RejectIn, tenant_id: Tenant):
+    def reject_proposal(proposal_id: str, body: RejectIn, principal: ReviewerP):
+        tenant_id = principal.tenant_id
         found = store.get_proposal(tenant_id, proposal_id)
         if found is None:
             raise HTTPException(status_code=404, detail="proposal not found")
         status, proposal = found
         if status != "pending":
             raise HTTPException(status_code=409, detail=f"proposal already {status}")
-        entry = reject(proposal, body.reviewer, body.reason)
+        entry = reject(proposal, principal.user_id, body.reason)
         if not store.decide(tenant_id, proposal_id, "rejected", None, entry):
             raise HTTPException(status_code=409, detail="proposal already decided")
         return {"status": "rejected"}
@@ -94,7 +114,7 @@ def create_app(store: Store, llm_factory=None) -> FastAPI:
     def list_audit(tenant_id: Tenant):
         return [e.model_dump(mode="json") for e in store.list_audit(tenant_id)]
 
-    register_scan_routes(app, store, current_tenant)
+    register_scan_routes(app, store, current_tenant, admin_tenant)
     return app
 
 
