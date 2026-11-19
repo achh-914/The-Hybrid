@@ -119,25 +119,32 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 
 ## Roadmap
 
-- [x] **Phase 1: Integration.** AEGIS adapter and CI integration.
-- [x] **Phase 2: Unified data model.**
-- [x] **Phase 3: Cross-domain engine.** Clause-to-infrastructure rules on synthetic AWS scenarios.
-- [ ] **Phase 4: AI investigation.** Extraction, remediation advice and reports done; investigation agents pending.
-- [ ] **Phase 5: Dashboard.** Contracts, resources, risks, evidence and approvals.
-- [ ] **Phase 6: Testing and deployment.** CI in place; production hardening below.
+- [x] Phase 1: Integration. AEGIS adapter and CI.
+- [x] Phase 2: Unified data model.
+- [x] Phase 3: Cross-domain engine. Clause-to-infrastructure rules on synthetic AWS scenarios.
+- [x] Phase 4: Extraction, remediation advice and reports. Investigation agents are not planned for now: rules decide, the model only extracts and explains.
+- [ ] Phase 5: Dashboard.
+- [ ] Phase 6: Deployment (container, HTTPS, PostgreSQL).
 
-**Next up** (in priority order)
+### Done
 
-- [ ] `GET /aws/connection` and `POST /aws/scan` (admin only)
+- [x] Role-based access (admin, reviewer, viewer) and API key revocation
+- [x] AWS connection and scan endpoints (admin only, server-derived External ID, scan rate limit). Tested with a fake collector and with emulated AWS (moto); **not validated on a real AWS account yet**
+- [x] Read-only collector and CloudFormation role template (same limit: not validated on a real account)
+- [x] Manual snapshot upload (`aws iam get-account-authorization-details`), which works without connecting an account
+- [x] Data handling document
+- [x] Per-tenant rate limit and size limit on `/contracts` (in memory, single process; a reverse proxy enforces the hard limit in production)
+- [x] Drift tests, including resolved findings
+
+### Next up (in priority order)
+
 - [ ] End-to-end run with the real Gemini API on a synthetic contract, including a prompt-injection case
-- [x] Data handling document: what is stored, what is sent to the LLM, retention and deletion
-- [ ] Per-tenant rate limiting on `/contracts` and request size limits
-- [ ] HTTPS via reverse proxy and container deployment
-- [ ] PostgreSQL instead of SQLite (migrations, tenant isolation), database backups and tenant data deletion
-- [ ] Scheduled scans and alerts on drift
-- [ ] Test for `resolved` findings in drift
-- [x] Read-only AWS collector (cross-account role with External ID)
-- [x] Role-based access and API key revocation
+- [ ] Container and HTTPS via reverse proxy
+- [ ] Audit log for AWS connect, disconnect and scan actions
+- [ ] PostgreSQL instead of SQLite (migrations), database backups and tenant data deletion
+- [ ] End-to-end validation of the collector on a real AWS account
+- [ ] Scheduled scans and alerts on drift (needs a connected account)
+- [ ] Evaluate bucket policies and SCPs (see ADR 0001 for current limits)
 
 ## Tech stack
 
