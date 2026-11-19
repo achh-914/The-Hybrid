@@ -9,7 +9,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict
 
-from .adapters.aegis_adapter import load_graph
+from .adapters.aegis_adapter import TargetNotFound, load_graph
 from .drift import compute_drift
 from .scan_cli import render_report, scan
 
@@ -71,7 +71,10 @@ def register_scan_routes(app, store, current_tenant):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "snapshot.json"
             path.write_text(row[0])
-            results = scan(reqs, path)
+            try:
+                results = scan(reqs, path)
+            except TargetNotFound as e:
+                raise HTTPException(422, str(e))
             md = render_report(results, path).replace(
                 str(path), f"snapshot:{payload.snapshot_id}"
             )

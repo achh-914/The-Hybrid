@@ -8,6 +8,10 @@ from aegis.loader import load_snapshot
 SOURCE_TYPES = {"iam_role", "internet", "external_account"}
 
 
+class TargetNotFound(ValueError):
+    """The protected resource is not in the graph, so it cannot be evaluated."""
+
+
 @dataclass(frozen=True)
 class AccessPath:
     source: str
@@ -39,7 +43,9 @@ def shortest_path(graph, start: str, target: str) -> AccessPath | None:
 
 def paths_to(graph, target: str) -> list[AccessPath]:
     if target not in graph.nodes:
-        raise ValueError(f"{target} not found in snapshot")
+        raise TargetNotFound(
+            f"{target} not found in snapshot (no policy references it, so it cannot be evaluated)"
+        )
     paths = []
     for node_id, node in graph.nodes.items():
         if node.type in SOURCE_TYPES:
