@@ -131,7 +131,7 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 - [ ] `GET /aws/connection` and `POST /aws/scan` (admin only)
 - [ ] End-to-end validation of the collector on a real AWS account (emulated run with moto done)
 - [ ] End-to-end run with the real Gemini API on a synthetic contract, including a prompt-injection case
-- [ ] Data handling document: what is stored, what is sent to the LLM, retention and deletion
+- [x] Data handling document: what is stored, what is sent to the LLM, retention and deletion
 - [ ] Per-tenant rate limiting on `/contracts` and request size limits
 - [ ] HTTPS via reverse proxy and container deployment
 - [ ] PostgreSQL instead of SQLite (migrations, tenant isolation), database backups and tenant data deletion
