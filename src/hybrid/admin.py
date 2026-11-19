@@ -23,6 +23,12 @@ def main(argv=None) -> int:
         help="default: viewer (least privilege)",
     )
 
+    r = sub.add_parser(
+        "revoke-key", help="revoke all active API keys of a user of a tenant"
+    )
+    r.add_argument("tenant_id")
+    r.add_argument("user_id")
+
     args = ap.parse_args(argv)
     store = Store(os.getenv("HYBRID_DB", "hybrid.db"))
 
@@ -31,6 +37,18 @@ def main(argv=None) -> int:
         print(f"tenant: {tenant_id}")
         print("role: admin")
         print(f"api key (shown once, keep it safe): {api_key}")
+        return 0
+
+    if args.cmd == "revoke-key":
+        try:
+            count = store.revoke_key(args.tenant_id, args.user_id)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        if count == 0:
+            print("error: no active key for that tenant and user", file=sys.stderr)
+            return 1
+        print(f"revoked {count} key(s) of {args.user_id} in {args.tenant_id}")
         return 0
 
     try:
