@@ -83,7 +83,7 @@ THE HYBRID reads configuration metadata only. It cannot read your data and canno
 | **Trust** | Cross-account role protected by a unique **External ID** (derived by the server, per tenant) |
 | **Session** | Short-lived (1 hour maximum) |
 
-> **Status:** the collector and the role template are implemented and tested against an emulated AWS account. The API endpoints that register your role and start a scan (`GET /aws/connection`, `POST /aws/scan`) and validation on a real AWS account are in progress.
+> **Status:** the collector and the role template are implemented and tested against an emulated AWS account (moto). They have not yet been validated against a real AWS account, so a first connection should be made in a non-production account. The API endpoints that register your role and start a scan (`GET /aws/connection`, `POST /aws/scan`) are in progress.
 
 1. Deploy the `hybrid-readonly-role.yaml` CloudFormation template in your AWS account. It asks for two parameters: the THE HYBRID account ID and your External ID, both provided to you.
 2. Send the resulting `RoleArn` output. The server validates it before use.
@@ -129,7 +129,6 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 **Next up** (in priority order)
 
 - [ ] `GET /aws/connection` and `POST /aws/scan` (admin only)
-- [ ] End-to-end validation of the collector on a real AWS account (emulated run with moto done)
 - [ ] End-to-end run with the real Gemini API on a synthetic contract, including a prompt-injection case
 - [x] Data handling document: what is stored, what is sent to the LLM, retention and deletion
 - [ ] Per-tenant rate limiting on `/contracts` and request size limits
