@@ -67,7 +67,7 @@ flowchart LR
 - **Multi-tenant API:** API keys map to tenants, and data is isolated per tenant.
 - **Role-based access:** `admin`, `reviewer` and `viewer` roles. Identity and role come from the API key, never from the request body. Every route requires a key (enforced by a test).
 - **Key management:** per-user API keys, stored hashed and shown once, with an admin command to revoke them.
-- **AWS collector (read-only):** assumes a customer role with a server-derived External ID, validates the role ARN, and converts the AWS configuration into a scannable snapshot.
+- **AWS collector (read-only):** assumes a customer role with a server-derived External ID, validates the role ARN, and converts the AWS configuration into a scannable snapshot. Covered by tests against an emulated AWS account (moto); validation on a real account is pending.
 - **Snapshots, scans and reports:** scan an IAM snapshot against approved requirements and generate a report.
 - **Drift detection:** new, resolved, persisting and changed findings, plus a scan-diff endpoint with tenant isolation.
 - **CI** runs the full test suite on every push.
@@ -82,6 +82,8 @@ THE HYBRID reads configuration metadata only. It cannot read your data and canno
 | **Cannot do** | Read object data, list objects, or create, modify or delete anything |
 | **Trust** | Cross-account role protected by a unique **External ID** (derived by the server, per tenant) |
 | **Session** | Short-lived (1 hour maximum) |
+
+> **Status:** the collector and the role template are implemented and tested against an emulated AWS account. The API endpoints that register your role and start a scan (`GET /aws/connection`, `POST /aws/scan`) and validation on a real AWS account are in progress.
 
 1. Deploy the `hybrid-readonly-role.yaml` CloudFormation template in your AWS account. It asks for two parameters: the THE HYBRID account ID and your External ID, both provided to you.
 2. Send the resulting `RoleArn` output. The server validates it before use.
@@ -124,20 +126,23 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 - [ ] **Phase 5: Dashboard.** Contracts, resources, risks, evidence and approvals.
 - [ ] **Phase 6: Testing and deployment.** CI in place; production hardening below.
 
-**Next up**
+**Next up** (in priority order)
 
-- [ ] Test for `resolved` findings in drift
-- [ ] PostgreSQL instead of SQLite (migrations, tenant isolation)
+- [ ] `GET /aws/connection` and `POST /aws/scan` (admin only)
+- [ ] End-to-end validation of the collector on a real AWS account (emulated run with moto done)
+- [ ] End-to-end run with the real Gemini API on a synthetic contract, including a prompt-injection case
+- [ ] Data handling document: what is stored, what is sent to the LLM, retention and deletion
+- [ ] Per-tenant rate limiting on `/contracts` and request size limits
+- [ ] HTTPS via reverse proxy and container deployment
+- [ ] PostgreSQL instead of SQLite (migrations, tenant isolation), database backups and tenant data deletion
 - [ ] Scheduled scans and alerts on drift
-- [ ] Per-tenant rate limiting on `/contracts`
-- [ ] HTTPS via reverse proxy
+- [ ] Test for `resolved` findings in drift
 - [x] Read-only AWS collector (cross-account role with External ID)
 - [x] Role-based access and API key revocation
-- [ ] End-to-end validation of the collector on a real AWS account
 
 ## Tech stack
 
-Python · FastAPI · Pydantic · NetworkX · Gemini (extraction only) · AWS IAM / S3 (read-only, boto3 as an optional `aws` extra) · CloudFormation · SQLite (moving to PostgreSQL) · GitHub Actions
+Python · FastAPI · Pydantic · NetworkX · Gemini (extraction only) · AWS IAM / S3 (read-only, boto3 as an optional `aws` extra) · CloudFormation · SQLite (moving to PostgreSQL) · pytest and moto (tests) · GitHub Actions
 
 ## Demo
 
@@ -173,4 +178,4 @@ This repository is proprietary. No permission is granted to use, copy, modify or
 ## Related projects
 
 - **AEGIS:** AWS IAM analysis and attack-path engine.
-- **VENDORA:** AI-powered procurement and contract document intelligence.
+- **[Vendora](https://github.com/achh-914/VENDORA):** AI agents that investigate invoice, purchase order and contract mismatches with evidence, and escalate to humans.
