@@ -1,7 +1,8 @@
 import os
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from .auth import Principal, Role
 from .scans import register_scan_routes
 from .aws_routes import register_aws_routes
@@ -9,7 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .extraction import ExtractionError, extract_proposals
 from .requirements import Approval, approve, reject
+from .ratelimit import RateLimiter, env_int
 from .store import Store
+
+
+MAX_CONTRACT_BODY_BYTES = 1_500_000
 
 
 class ContractIn(BaseModel):
@@ -35,6 +40,17 @@ def _default_llm():
 def create_app(store: Store, llm_factory=None) -> FastAPI:
     factory = llm_factory or _default_llm
     app = FastAPI(title="THE HYBRID")
+    app.state.contract_limiter = RateLimiter(
+        max_calls=env_int("HYBRID_CONTRACTS_PER_HOUR", 30), window_seconds=3600
+    )
+
+    @app.middleware("http")
+    async def limit_contract_body(request: Request, call_next):
+        if request.method == "POST" and request.url.path == "/contracts":
+            declared = request.headers.get("content-length", "")
+            if declared.isdigit() and int(declared) > MAX_CONTRACT_BODY_BYTES:
+                return JSONResponse({"detail": "request body too large"}, status_code=413)
+        return await call_next(request)
 
     def current_principal(x_api_key: str | None = Header(default=None)) -> Principal:
         principal = store.principal_for_key(x_api_key) if x_api_key else None
@@ -62,6 +78,13 @@ def create_app(store: Store, llm_factory=None) -> FastAPI:
     @app.post("/contracts", status_code=201)
     def upload_contract(body: ContractIn, principal: ReviewerP):
         tenant_id = principal.tenant_id
+        wait = app.state.contract_limiter.claim(tenant_id)
+        if wait > 0:
+            raise HTTPException(
+                status_code=429,
+                detail="contract upload rate limit reached",
+                headers={"Retry-After": str(int(wait) + 1)},
+            )
         try:
             proposals = extract_proposals(body.text, factory(), tenant_id, body.contract_id)
         except ExtractionError as e:
