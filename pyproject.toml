@@ -8,6 +8,7 @@ dependencies = ["pydantic>=2.7"]
 dev = ["pytest>=8", "httpx"]
 gemini = ["google-genai"]
 api = ["fastapi", "uvicorn"]
+aws = ["boto3"]
 
 [build-system]
 requires = ["setuptools>=68"]
