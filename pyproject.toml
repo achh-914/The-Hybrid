@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 dependencies = ["pydantic>=2.7"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "httpx"]
+dev = ["pytest>=8", "httpx", "moto>=5"]
 gemini = ["google-genai"]
 api = ["fastapi", "uvicorn"]
 aws = ["boto3"]
