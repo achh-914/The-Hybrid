@@ -65,9 +65,29 @@ flowchart LR
 - **Approval workflow:** extracted requirements are proposals until a human approves them, with a full audit trail.
 - **Remediation advice** with a what-if check before anything is recommended.
 - **Multi-tenant API:** API keys map to tenants, and data is isolated per tenant.
+- **Role-based access:** `admin`, `reviewer` and `viewer` roles. Identity and role come from the API key, never from the request body. Every route requires a key (enforced by a test).
+- **Key management:** per-user API keys, stored hashed and shown once, with an admin command to revoke them.
+- **AWS collector (read-only):** assumes a customer role with a server-derived External ID, validates the role ARN, and converts the AWS configuration into a scannable snapshot.
 - **Snapshots, scans and reports:** scan an IAM snapshot against approved requirements and generate a report.
 - **Drift detection:** new, resolved, persisting and changed findings, plus a scan-diff endpoint with tenant isolation.
 - **CI** runs the full test suite on every push.
+
+## Connect your AWS account (read-only)
+
+THE HYBRID reads configuration metadata only. It cannot read your data and cannot change anything.
+
+| | |
+|---|---|
+| **Can read** | IAM account authorization details; S3 bucket list, bucket policy, bucket ACL, public access block and encryption configuration |
+| **Cannot do** | Read object data, list objects, or create, modify or delete anything |
+| **Trust** | Cross-account role protected by a unique **External ID** (derived by the server, per tenant) |
+| **Session** | Short-lived (1 hour maximum) |
+
+1. Deploy the `hybrid-readonly-role.yaml` CloudFormation template in your AWS account. It asks for two parameters: the THE HYBRID account ID and your External ID, both provided to you.
+2. Send the resulting `RoleArn` output. The server validates it before use.
+3. Run a scan. Findings are checked against the requirements your team approved.
+
+You can review the template before deploying it. Delete the stack at any time to revoke access immediately.
 
 ## Modules
 
@@ -100,9 +120,9 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 - [x] **Phase 1: Integration.** AEGIS adapter and CI integration.
 - [x] **Phase 2: Unified data model.**
 - [x] **Phase 3: Cross-domain engine.** Clause-to-infrastructure rules on synthetic AWS scenarios.
-- [ ] **Phase 4: AI investigation.** Extraction, remediation advice and reports done; investigation agents pending.
+- [~] **Phase 4: AI investigation.** Extraction, remediation advice and reports done; investigation agents pending.
 - [ ] **Phase 5: Dashboard.** Contracts, resources, risks, evidence and approvals.
-- [ ] **Phase 6: Testing and deployment.** CI in place; production hardening below.
+- [~] **Phase 6: Testing and deployment.** CI in place; production hardening below.
 
 **Next up**
 
@@ -111,11 +131,13 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 - [ ] Scheduled scans and alerts on drift
 - [ ] Per-tenant rate limiting on `/contracts`
 - [ ] HTTPS via reverse proxy
-- [ ] Read-only AWS collector (cross-account role with External ID)
+- [x] Read-only AWS collector (cross-account role with External ID)
+- [x] Role-based access and API key revocation
+- [ ] End-to-end validation of the collector on a real AWS account
 
 ## Tech stack
 
-Python · FastAPI · Pydantic · NetworkX · Gemini (extraction only) · AWS IAM / S3 (read-only) · SQLite (moving to PostgreSQL) · GitHub Actions
+Python · FastAPI · Pydantic · NetworkX · Gemini (extraction only) · AWS IAM / S3 (read-only, boto3 as an optional `aws` extra) · CloudFormation · SQLite (moving to PostgreSQL) · GitHub Actions
 
 ## Demo
 
