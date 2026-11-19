@@ -67,7 +67,7 @@ flowchart LR
 - **Multi-tenant API:** API keys map to tenants, and data is isolated per tenant.
 - **Role-based access:** `admin`, `reviewer` and `viewer` roles. Identity and role come from the API key, never from the request body. Every route requires a key (enforced by a test).
 - **Key management:** per-user API keys, stored hashed and shown once, with an admin command to revoke them.
-- **AWS collector (read-only):** assumes a customer role with a server-derived External ID, validates the role ARN, and converts the AWS configuration into a scannable snapshot. Covered by tests against an emulated AWS account (moto); validation on a real account is pending.
+- **AWS collector (read-only):** assumes a customer role with a server-derived External ID, validates the role ARN, and converts the AWS configuration into a scannable snapshot. Covered by tests against an emulated AWS account (moto); Not yet validated against a real AWS account.
 - **Snapshots, scans and reports:** scan an IAM snapshot against approved requirements and generate a report.
 - **Drift detection:** new, resolved, persisting and changed findings, plus a scan-diff endpoint with tenant isolation.
 - **CI** runs the full test suite on every push.
