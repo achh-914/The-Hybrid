@@ -129,6 +129,7 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 ### Done
 
 - [x] Role-based access (admin, reviewer, viewer) and API key revocation
+- [x] Tenant data deletion (operator CLI, all or nothing, no content kept) and rotated database backups (`python -m hybrid.backup`)
 - [x] Audit log for AWS connect, disconnect and scan actions (actor from the API key; no role ARN, External ID or AWS error text is recorded)
 - [x] AWS connection and scan endpoints (admin only, server-derived External ID, scan rate limit). Tested with a fake collector and with emulated AWS (moto); **not validated on a real AWS account yet**
 - [x] Read-only collector and CloudFormation role template (same limit: not validated on a real account)
@@ -141,7 +142,7 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 
 - [x] End-to-end run with the real Gemini API on a synthetic contract, including a prompt-injection case (manual script `scripts/e2e_gemini.py`)
 - [ ] Container and HTTPS via reverse proxy
-- [ ] PostgreSQL instead of SQLite (migrations), database backups and tenant data deletion
+- [ ] PostgreSQL instead of SQLite (migrations)
 - [ ] End-to-end validation of the collector on a real AWS account
 - [ ] Scheduled scans and alerts on drift (needs a connected account)
 - [ ] Evaluate bucket policies and SCPs (see ADR 0001 for current limits)
