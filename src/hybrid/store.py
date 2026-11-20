@@ -207,6 +207,17 @@ class Store:
             ).fetchall()
         return [Requirement.model_validate_json(r[0]) for r in rows]
 
+    def add_audit(self, tenant_id: str, entry: AuditEntry) -> None:
+        """Append one audit entry on its own (for actions that are not a decision)."""
+        if entry.tenant_id != tenant_id:
+            raise ValueError("audit entry belongs to another tenant")
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO audit (tenant_id, data) VALUES (?, ?)",
+                (tenant_id, entry.model_dump_json()),
+            )
+            self._db.commit()
+
     def list_audit(self, tenant_id: str) -> list[AuditEntry]:
         with self._lock:
             rows = self._db.execute(
