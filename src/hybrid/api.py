@@ -139,7 +139,7 @@ def create_app(store: Store, llm_factory=None) -> FastAPI:
         return [e.model_dump(mode="json") for e in store.list_audit(tenant_id)]
 
     register_scan_routes(app, store, current_tenant, admin_tenant)
-    register_aws_routes(app, store, admin_tenant)
+    register_aws_routes(app, store, require_roles(Role.ADMIN))
     return app
 
 
