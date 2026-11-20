@@ -1,298 +1,160 @@
-from __future__ import annotations
+import os
+from typing import Annotated
 
-import hashlib
-import re
-import secrets
-import sqlite3
-import threading
-
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from .auth import Principal, Role
-from .aws_connections import SCHEMA as AWS_CONNECTIONS_SCHEMA
-from .models import Requirement
-from .requirements import AuditEntry, RequirementProposal
+from .scans import register_scan_routes
+from .aws_routes import register_aws_routes
+from pydantic import BaseModel, ConfigDict, Field
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS tenants (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS api_keys (
-    key_hash TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
-    user_id TEXT NOT NULL, role TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS proposals (
-    tenant_id TEXT NOT NULL, id TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL,
-    PRIMARY KEY (tenant_id, id));
-CREATE TABLE IF NOT EXISTS requirements (
-    tenant_id TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL,
-    PRIMARY KEY (tenant_id, id));
-CREATE TABLE IF NOT EXISTS audit (
-    seq INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id TEXT NOT NULL, data TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS snapshots (
-    tenant_id TEXT NOT NULL, id TEXT NOT NULL, sha256 TEXT NOT NULL,
-    created_at TEXT NOT NULL, body TEXT NOT NULL,
-    PRIMARY KEY (tenant_id, id));
-CREATE TABLE IF NOT EXISTS scans (
-    tenant_id TEXT NOT NULL, id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
-    created_at TEXT NOT NULL, report_md TEXT NOT NULL, report_json TEXT NOT NULL,
-    PRIMARY KEY (tenant_id, id));
-CREATE TABLE IF NOT EXISTS deleted_tenants (
-    tenant_id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL, operator TEXT NOT NULL);
-"""
-
-_USER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}$")
+from .extraction import ExtractionError, extract_proposals
+from .requirements import Approval, approve, reject
+from .ratelimit import RateLimiter, env_int
+from .store import Store
 
 
-def _hash(api_key: str) -> str:
-    return hashlib.sha256(api_key.encode()).hexdigest()
+MAX_CONTRACT_BODY_BYTES = 1_500_000
 
 
-class Store:
-    """SQLite store. Every read and write is scoped by tenant_id."""
+def _docs_enabled() -> bool:
+    """The interactive API docs describe every route, so they are off unless asked for."""
+    return os.getenv("HYBRID_ENABLE_DOCS", "").strip().lower() in {"1", "true", "yes"}
 
-    def __init__(self, path: str = ":memory:"):
-        self._db = sqlite3.connect(path, check_same_thread=False)
-        self._lock = threading.Lock()
-        with self._lock:
-            # Deleted rows are overwritten with zeros, not left in free pages.
-            self._db.execute("PRAGMA secure_delete = ON")
-            self._db.executescript(SCHEMA)
-            self._db.executescript(AWS_CONNECTIONS_SCHEMA)
-            self._migrate_api_keys()
-            self._db.commit()
 
-    def _migrate_api_keys(self) -> None:
-        """Databases created before roles existed: their keys were all-powerful,
-        so they keep working as admin. New keys always get an explicit role."""
-        cols = {r[1] for r in self._db.execute("PRAGMA table_info(api_keys)")}
-        if "user_id" not in cols:
-            self._db.execute(
-                "ALTER TABLE api_keys ADD COLUMN user_id TEXT NOT NULL DEFAULT 'admin'"
+class ContractIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+    text: str = Field(min_length=1, max_length=200_000)
+
+
+class RejectIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reviewer: str = Field(min_length=1, max_length=100)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+def _default_llm():
+    from .providers.gemini import GeminiClient
+
+    return GeminiClient()
+
+
+def create_app(store: Store, llm_factory=None) -> FastAPI:
+    factory = llm_factory or _default_llm
+    docs = {} if _docs_enabled() else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    app = FastAPI(title="THE HYBRID", **docs)
+    app.state.contract_limiter = RateLimiter(
+        max_calls=env_int("HYBRID_CONTRACTS_PER_HOUR", 30), window_seconds=3600
+    )
+
+    @app.middleware("http")
+    async def limit_contract_body(request: Request, call_next):
+        if request.method == "POST" and request.url.path == "/contracts":
+            declared = request.headers.get("content-length", "")
+            if declared.isdigit() and int(declared) > MAX_CONTRACT_BODY_BYTES:
+                return JSONResponse({"detail": "request body too large"}, status_code=413)
+        return await call_next(request)
+
+    def current_principal(x_api_key: str | None = Header(default=None)) -> Principal:
+        principal = store.principal_for_key(x_api_key) if x_api_key else None
+        if principal is None:
+            raise HTTPException(status_code=401, detail="missing or invalid API key")
+        return principal
+
+    def current_tenant(principal: Principal = Depends(current_principal)) -> str:
+        return principal.tenant_id
+
+    def require_roles(*allowed: Role):
+        def dependency(principal: Principal = Depends(current_principal)) -> Principal:
+            if principal.role not in allowed:
+                raise HTTPException(status_code=403, detail="insufficient role")
+            return principal
+
+        return dependency
+
+    def admin_tenant(principal: Principal = Depends(require_roles(Role.ADMIN))) -> str:
+        return principal.tenant_id
+
+    Tenant = Annotated[str, Depends(current_tenant)]
+    ReviewerP = Annotated[Principal, Depends(require_roles(Role.REVIEWER, Role.ADMIN))]
+
+    @app.post("/contracts", status_code=201)
+    def upload_contract(body: ContractIn, principal: ReviewerP):
+        tenant_id = principal.tenant_id
+        wait = app.state.contract_limiter.claim(tenant_id)
+        if wait > 0:
+            raise HTTPException(
+                status_code=429,
+                detail="contract upload rate limit reached",
+                headers={"Retry-After": str(int(wait) + 1)},
             )
-        if "role" not in cols:
-            self._db.execute(
-                "ALTER TABLE api_keys ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'"
-            )
-        if "revoked_at" not in cols:
-            self._db.execute("ALTER TABLE api_keys ADD COLUMN revoked_at TEXT")
-
-    def create_tenant(self, name: str) -> tuple[str, str]:
-        """Create a tenant and its first key, which is an admin key."""
-        tenant_id = "t-" + secrets.token_hex(6)
-        api_key = "hyb_" + secrets.token_urlsafe(32)
-        with self._lock:
-            self._db.execute("INSERT INTO tenants VALUES (?, ?)", (tenant_id, name))
-            self._db.execute(
-                "INSERT INTO api_keys (key_hash, tenant_id, user_id, role) VALUES (?, ?, ?, ?)",
-                (_hash(api_key), tenant_id, "admin", Role.ADMIN.value),
-            )
-            self._db.commit()
-        return tenant_id, api_key
-
-    def create_key(self, tenant_id: str, user_id: str, role: Role | str) -> str:
-        """Create an API key for a user of an existing tenant. Shown once, stored hashed."""
-        role = Role(role)
-        if not _USER_ID.fullmatch(user_id):
-            raise ValueError("invalid user_id")
-        api_key = "hyb_" + secrets.token_urlsafe(32)
-        with self._lock:
-            exists = self._db.execute(
-                "SELECT 1 FROM tenants WHERE id = ?", (tenant_id,)
-            ).fetchone()
-            if exists is None:
-                raise ValueError("unknown tenant")
-            self._db.execute(
-                "INSERT INTO api_keys (key_hash, tenant_id, user_id, role) VALUES (?, ?, ?, ?)",
-                (_hash(api_key), tenant_id, user_id, role.value),
-            )
-            self._db.commit()
-        return api_key
-
-    def revoke_key(self, tenant_id: str, user_id: str) -> int:
-        """Revoke every active key of a user inside one tenant (soft delete).
-
-        Returns how many keys were revoked (0 if there was nothing to revoke).
-        Refuses to remove the last active admin key of a tenant, so a tenant
-        can never lock itself out: create the new admin first, then revoke."""
-        with self._lock:
-            targets = self._db.execute(
-                "SELECT role FROM api_keys "
-                "WHERE tenant_id = ? AND user_id = ? AND revoked_at IS NULL",
-                (tenant_id, user_id),
-            ).fetchall()
-            if not targets:
-                return 0
-            if any(row[0] == Role.ADMIN.value for row in targets):
-                other_admins = self._db.execute(
-                    "SELECT COUNT(*) FROM api_keys "
-                    "WHERE tenant_id = ? AND role = ? AND user_id != ? "
-                    "AND revoked_at IS NULL",
-                    (tenant_id, Role.ADMIN.value, user_id),
-                ).fetchone()[0]
-                if other_admins == 0:
-                    raise ValueError("cannot revoke the last active admin key of a tenant")
-            cur = self._db.execute(
-                "UPDATE api_keys SET revoked_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') "
-                "WHERE tenant_id = ? AND user_id = ? AND revoked_at IS NULL",
-                (tenant_id, user_id),
-            )
-            self._db.commit()
-            return cur.rowcount
-
-    def ping(self) -> bool:
-        """True if the database answers. Used by /health, never exposes details."""
         try:
-            with self._lock:
-                self._db.execute("SELECT 1").fetchone()
-            return True
-        except sqlite3.Error:
-            return False
+            proposals = extract_proposals(body.text, factory(), tenant_id, body.contract_id)
+        except ExtractionError as e:
+            raise HTTPException(status_code=422, detail=f"extraction failed: {e}")
+        except Exception:
+            raise HTTPException(status_code=502, detail="extraction service unavailable")
+        store.add_proposals(tenant_id, proposals)
+        return {"proposals": [p.model_dump(mode="json") for p in proposals]}
 
-    def delete_tenant(self, tenant_id: str, operator: str) -> dict[str, int]:
-        """Permanently delete a tenant and every row that belongs to it.
+    @app.get("/proposals")
+    def list_proposals(tenant_id: Tenant):
+        return [
+            {"status": s, **p.model_dump(mode="json")}
+            for s, p in store.list_proposals(tenant_id)
+        ]
 
-        All or nothing (one transaction). It walks every table that has a tenant_id
-        column, so a table added later is covered without touching this method.
-        Only the tenant id, the time and the operator are kept, in deleted_tenants:
-        no content. Returns the number of rows removed per table."""
-        if not _USER_ID.fullmatch(operator):
-            raise ValueError("invalid operator")
-        with self._lock:
-            exists = self._db.execute(
-                "SELECT 1 FROM tenants WHERE id = ?", (tenant_id,)
-            ).fetchone()
-            if exists is None:
-                raise ValueError("unknown tenant")
-            names = [
-                r[0]
-                for r in self._db.execute(
-                    "SELECT name FROM sqlite_master "
-                    "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-                )
-            ]
-            counts: dict[str, int] = {}
-            try:
-                # "tenants" last, so nothing ever points at a tenant that is gone.
-                for table in sorted(names, key=lambda n: n == "tenants"):
-                    if table == "deleted_tenants":
-                        continue
-                    cols = {r[1] for r in self._db.execute(f'PRAGMA table_info("{table}")')}
-                    if table == "tenants":
-                        column = "id"
-                    elif "tenant_id" in cols:
-                        column = "tenant_id"
-                    else:
-                        continue
-                    cur = self._db.execute(
-                        f'DELETE FROM "{table}" WHERE {column} = ?', (tenant_id,)
-                    )
-                    counts[table] = cur.rowcount
-                self._db.execute(
-                    "INSERT INTO deleted_tenants (tenant_id, deleted_at, operator) "
-                    "VALUES (?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?)",
-                    (tenant_id, operator),
-                )
-                self._db.commit()
-            except Exception:
-                self._db.rollback()
-                raise
-        return counts
+    @app.post("/proposals/{proposal_id}/approve")
+    def approve_proposal(proposal_id: str, approval: Approval, principal: ReviewerP):
+        tenant_id = principal.tenant_id
+        approval = approval.model_copy(update={"reviewer": principal.user_id})
+        found = store.get_proposal(tenant_id, proposal_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="proposal not found")
+        status, proposal = found
+        if status != "pending":
+            raise HTTPException(status_code=409, detail=f"proposal already {status}")
+        requirement, entry = approve(proposal, approval)
+        if not store.decide(tenant_id, proposal_id, "approved", requirement, entry):
+            raise HTTPException(status_code=409, detail="proposal already decided")
+        return requirement.model_dump(mode="json")
 
-    def deleted_tenants(self) -> list[dict]:
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT tenant_id, deleted_at, operator FROM deleted_tenants ORDER BY deleted_at"
-            ).fetchall()
-        return [{"tenant_id": r[0], "deleted_at": r[1], "operator": r[2]} for r in rows]
+    @app.post("/proposals/{proposal_id}/reject")
+    def reject_proposal(proposal_id: str, body: RejectIn, principal: ReviewerP):
+        tenant_id = principal.tenant_id
+        found = store.get_proposal(tenant_id, proposal_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="proposal not found")
+        status, proposal = found
+        if status != "pending":
+            raise HTTPException(status_code=409, detail=f"proposal already {status}")
+        entry = reject(proposal, principal.user_id, body.reason)
+        if not store.decide(tenant_id, proposal_id, "rejected", None, entry):
+            raise HTTPException(status_code=409, detail="proposal already decided")
+        return {"status": "rejected"}
 
-    def principal_for_key(self, api_key: str) -> Principal | None:
-        with self._lock:
-            row = self._db.execute(
-                "SELECT tenant_id, user_id, role FROM api_keys "
-                "WHERE key_hash = ? AND revoked_at IS NULL",
-                (_hash(api_key),),
-            ).fetchone()
-        if row is None:
-            return None
-        try:
-            return Principal(tenant_id=row[0], user_id=row[1], role=Role(row[2]))
-        except ValueError:
-            return None  # unknown role in the database: fail closed
+    @app.get("/requirements")
+    def list_requirements(tenant_id: Tenant):
+        return [r.model_dump(mode="json") for r in store.list_requirements(tenant_id)]
 
-    def tenant_for_key(self, api_key: str) -> str | None:
-        principal = self.principal_for_key(api_key)
-        return principal.tenant_id if principal else None
+    @app.get("/audit")
+    def list_audit(tenant_id: Tenant):
+        return [e.model_dump(mode="json") for e in store.list_audit(tenant_id)]
 
-    def add_proposals(self, tenant_id: str, proposals: list[RequirementProposal]) -> None:
-        with self._lock:
-            self._db.executemany(
-                "INSERT OR IGNORE INTO proposals (tenant_id, id, status, data) "
-                "VALUES (?, ?, 'pending', ?)",
-                [(tenant_id, p.id, p.model_dump_json()) for p in proposals],
-            )
-            self._db.commit()
+    @app.get("/health")
+    def health():
+        """Liveness for the container and the reverse proxy. Public, and says nothing else."""
+        if not store.ping():
+            return JSONResponse({"status": "unavailable"}, status_code=503)
+        return {"status": "ok"}
 
-    def get_proposal(self, tenant_id: str, proposal_id: str):
-        with self._lock:
-            row = self._db.execute(
-                "SELECT status, data FROM proposals WHERE tenant_id = ? AND id = ?",
-                (tenant_id, proposal_id),
-            ).fetchone()
-        if row is None:
-            return None
-        return row[0], RequirementProposal.model_validate_json(row[1])
+    register_scan_routes(app, store, current_tenant, admin_tenant)
+    register_aws_routes(app, store, require_roles(Role.ADMIN))
+    return app
 
-    def list_proposals(self, tenant_id: str):
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT status, data FROM proposals WHERE tenant_id = ? ORDER BY rowid",
-                (tenant_id,),
-            ).fetchall()
-        return [(s, RequirementProposal.model_validate_json(d)) for s, d in rows]
 
-    def decide(self, tenant_id, proposal_id, status, requirement: Requirement | None,
-               entry: AuditEntry) -> bool:
-        """Atomically move a pending proposal to a final status. False if already decided."""
-        with self._lock:
-            cur = self._db.execute(
-                "UPDATE proposals SET status = ? "
-                "WHERE tenant_id = ? AND id = ? AND status = 'pending'",
-                (status, tenant_id, proposal_id),
-            )
-            if cur.rowcount == 0:
-                self._db.rollback()
-                return False
-            if requirement is not None:
-                self._db.execute(
-                    "INSERT INTO requirements (tenant_id, id, data) VALUES (?, ?, ?)",
-                    (tenant_id, requirement.id, requirement.model_dump_json()),
-                )
-            self._db.execute(
-                "INSERT INTO audit (tenant_id, data) VALUES (?, ?)",
-                (tenant_id, entry.model_dump_json()),
-            )
-            self._db.commit()
-        return True
-
-    def list_requirements(self, tenant_id: str) -> list[Requirement]:
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT data FROM requirements WHERE tenant_id = ? ORDER BY rowid",
-                (tenant_id,),
-            ).fetchall()
-        return [Requirement.model_validate_json(r[0]) for r in rows]
-
-    def add_audit(self, tenant_id: str, entry: AuditEntry) -> None:
-        """Append one audit entry on its own (for actions that are not a decision)."""
-        if entry.tenant_id != tenant_id:
-            raise ValueError("audit entry belongs to another tenant")
-        with self._lock:
-            self._db.execute(
-                "INSERT INTO audit (tenant_id, data) VALUES (?, ?)",
-                (tenant_id, entry.model_dump_json()),
-            )
-            self._db.commit()
-
-    def list_audit(self, tenant_id: str) -> list[AuditEntry]:
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT data FROM audit WHERE tenant_id = ? ORDER BY seq", (tenant_id,)
-            ).fetchall()
-        return [AuditEntry.model_validate_json(r[0]) for r in rows]
+def create_default_app() -> FastAPI:
+    return create_app(Store(os.getenv("HYBRID_DB", "hybrid.db")))
