@@ -1,6 +1,6 @@
 # Data handling
 
-*Last updated: 2026-11-19. Status: draft for design partners.*
+*Last updated: 2026-11-20. Status: draft for design partners.*
 
 This document explains what THE HYBRID stores, what it sends to third parties, and what it never does. It describes the **current implementation**. Anything not built yet is marked **Planned**. Items marked **[TO CONFIRM]** must be checked before this document is shared with a customer.
 
@@ -21,7 +21,8 @@ This document explains what THE HYBRID stores, what it sends to third parties, a
 |---|---|---|
 | Tenants and users | Tenant name, user ids, role, key revocation time | API keys are stored only as SHA-256 hashes and shown once |
 | Requirement proposals and approved requirements | Obligations extracted from contracts (clause number, page, excerpt, structured fields) | Nothing becomes an active requirement without human approval |
-| Audit trail | Who approved or rejected what, and when | Append-only |
+| Audit trail | Who approved or rejected what, and when; who connected, disconnected or scanned an AWS account (account ID and result codes only, never the role ARN, External ID or AWS error text) | Append-only |
+| Deletion record | Tenant ID, deletion time and the operator who did it | No content. Kept after a tenant is deleted |
 | AWS snapshots | IAM authorization details (users, roles, groups, policies) and S3 configuration metadata (bucket policy, ACL, public access block, encryption) | Contains account ID and ARNs. No object data |
 | Scans and reports | Findings, evidence and generated reports | |
 
@@ -62,15 +63,18 @@ We never ask for AWS access keys. We only receive the role ARN, which the server
 - Per-tenant isolation in data and API.
 - Role-based access (`admin`, `reviewer`, `viewer`). Identity and role come from the API key, never from the request body.
 - API keys stored hashed, shown once, revocable. Every route requires a key, enforced by an automated test.
-- Append-only audit trail of approvals and rejections.
+- Append-only audit trail of approvals, rejections and AWS connect, disconnect and scan actions.
 - Hardened extraction: prompt-injection test cases, fail-closed validation, grounding in the contract text.
 - Server-derived External ID and role ARN validation for AWS access.
 
 ## Retention and deletion
 
-- **Today:** data is kept until deletion is requested. Deletion is done by the operator on written request **[TO CONFIRM: response time]**.
-- **Planned:** self-service deletion of a tenant's data, a documented backup and retention policy.
+- **Retention:** data is kept until deletion is requested.
+- **Deleting a tenant:** done by the operator on written request **[TO CONFIRM: response time]**. It permanently removes everything the tenant owns in one transaction: users and API keys, requirements and proposals, audit trail, AWS connection, snapshots, scans and reports. Deleted rows are overwritten, not just unlinked. Only the tenant ID, the time and the operator's name are kept, as a deletion record.
+- **Backups:** the database is backed up with `python -m hybrid.backup` (consistent copy, compressed, readable only by the service account). Backups are rotated after **30 days** by default (`HYBRID_BACKUP_KEEP_DAYS`). A deleted tenant therefore disappears from the live system immediately and from backups within that period. State this period exactly as configured when you answer a customer.
+- **Backup encryption:** the backup script does not encrypt. Store backups on an encrypted disk or volume, separate from the database host. **[TO CONFIRM before the first customer]**
 - **AWS access:** you can revoke it yourself at any time by deleting the CloudFormation stack.
+- **Planned:** self-service deletion by the tenant's admin.
 
 ## Hosting and subprocessors
 
@@ -79,7 +83,7 @@ We never ask for AWS access keys. We only receive the role ARN, which the server
 | Google (Gemini API) | Contract extraction | Contract text |
 | Hosting provider **[TO FILL]** | Runs the application and database | All stored data |
 
-**Encryption at rest:** the database is currently a SQLite file, so encryption at rest depends on the host disk. **Planned:** PostgreSQL with encryption and backups.
+**Encryption at rest:** the database is currently a SQLite file, so encryption at rest depends on the host disk. **Planned:** PostgreSQL with encryption.
 
 ## Your responsibilities
 
