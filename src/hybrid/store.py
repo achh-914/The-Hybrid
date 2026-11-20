@@ -7,6 +7,7 @@ import sqlite3
 import threading
 
 from .auth import Principal, Role
+from .aws_connections import SCHEMA as AWS_CONNECTIONS_SCHEMA
 from .models import Requirement
 from .requirements import AuditEntry, RequirementProposal
 
@@ -32,6 +33,8 @@ CREATE TABLE IF NOT EXISTS scans (
     tenant_id TEXT NOT NULL, id TEXT NOT NULL, snapshot_id TEXT NOT NULL,
     created_at TEXT NOT NULL, report_md TEXT NOT NULL, report_json TEXT NOT NULL,
     PRIMARY KEY (tenant_id, id));
+CREATE TABLE IF NOT EXISTS deleted_tenants (
+    tenant_id TEXT PRIMARY KEY, deleted_at TEXT NOT NULL, operator TEXT NOT NULL);
 """
 
 _USER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@-]{0,63}$")
@@ -48,7 +51,10 @@ class Store:
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._lock = threading.Lock()
         with self._lock:
+            # Deleted rows are overwritten with zeros, not left in free pages.
+            self._db.execute("PRAGMA secure_delete = ON")
             self._db.executescript(SCHEMA)
+            self._db.executescript(AWS_CONNECTIONS_SCHEMA)
             self._migrate_api_keys()
             self._db.commit()
 
@@ -129,6 +135,63 @@ class Store:
             )
             self._db.commit()
             return cur.rowcount
+
+    def delete_tenant(self, tenant_id: str, operator: str) -> dict[str, int]:
+        """Permanently delete a tenant and every row that belongs to it.
+
+        All or nothing (one transaction). It walks every table that has a tenant_id
+        column, so a table added later is covered without touching this method.
+        Only the tenant id, the time and the operator are kept, in deleted_tenants:
+        no content. Returns the number of rows removed per table."""
+        if not _USER_ID.fullmatch(operator):
+            raise ValueError("invalid operator")
+        with self._lock:
+            exists = self._db.execute(
+                "SELECT 1 FROM tenants WHERE id = ?", (tenant_id,)
+            ).fetchone()
+            if exists is None:
+                raise ValueError("unknown tenant")
+            names = [
+                r[0]
+                for r in self._db.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+                )
+            ]
+            counts: dict[str, int] = {}
+            try:
+                # "tenants" last, so nothing ever points at a tenant that is gone.
+                for table in sorted(names, key=lambda n: n == "tenants"):
+                    if table == "deleted_tenants":
+                        continue
+                    cols = {r[1] for r in self._db.execute(f'PRAGMA table_info("{table}")')}
+                    if table == "tenants":
+                        column = "id"
+                    elif "tenant_id" in cols:
+                        column = "tenant_id"
+                    else:
+                        continue
+                    cur = self._db.execute(
+                        f'DELETE FROM "{table}" WHERE {column} = ?', (tenant_id,)
+                    )
+                    counts[table] = cur.rowcount
+                self._db.execute(
+                    "INSERT INTO deleted_tenants (tenant_id, deleted_at, operator) "
+                    "VALUES (?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?)",
+                    (tenant_id, operator),
+                )
+                self._db.commit()
+            except Exception:
+                self._db.rollback()
+                raise
+        return counts
+
+    def deleted_tenants(self) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT tenant_id, deleted_at, operator FROM deleted_tenants ORDER BY deleted_at"
+            ).fetchall()
+        return [{"tenant_id": r[0], "deleted_at": r[1], "operator": r[2]} for r in rows]
 
     def principal_for_key(self, api_key: str) -> Principal | None:
         with self._lock:
