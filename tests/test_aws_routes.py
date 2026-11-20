@@ -197,3 +197,96 @@ def test_connections_do_not_cross_tenants():
     assert info["role_arn"] is None
     assert client.post("/aws/scan", headers=other).status_code == 409
     assert collector.calls == []
+
+
+# ---- audit trail ------------------------------------------------------------
+
+def aws_audit(client, headers):
+    entries = client.get("/audit", headers=headers).json()
+    return [e for e in entries if e["action"].startswith("aws.")]
+
+
+def test_connect_replace_and_remove_are_audited_with_the_actor_from_the_key():
+    client, keys, store, tenant, _ = make()
+    ana = {"X-API-Key": store.create_key(tenant, "ana", "admin")}
+
+    assert client.post("/aws/connection", json={"role_arn": ROLE}, headers=ana).status_code == 200
+    assert client.post("/aws/connection", json={"role_arn": ROLE}, headers=keys["admin"]).status_code == 200
+    assert client.delete("/aws/connection", headers=ana).status_code == 204
+
+    got = aws_audit(client, keys["admin"])
+    assert [e["action"] for e in got] == [
+        "aws.connection.set", "aws.connection.set", "aws.connection.removed"]
+    assert [e["actor"] for e in got] == ["ana", "admin", "ana"]
+    assert [e["details"].get("replaced") for e in got[:2]] == [False, True]
+    assert all(e["details"]["account_id"] == "123456789012" for e in got)
+
+
+def test_removing_nothing_writes_no_audit_entry():
+    client, keys, _, _, _ = make()
+    assert client.delete("/aws/connection", headers=keys["admin"]).status_code == 204
+    assert aws_audit(client, keys["admin"]) == []
+
+
+def test_a_successful_scan_is_audited_with_its_ids():
+    client, keys, _, _, _ = make()
+    approve_requirement(client, keys)
+    connect(client, keys)
+    r = client.post("/aws/scan", headers=keys["admin"]).json()
+
+    done = [e for e in aws_audit(client, keys["admin"]) if e["action"] == "aws.scan.completed"]
+    assert len(done) == 1
+    assert done[0]["actor"] == "admin"
+    assert done[0]["subject_id"] == r["id"]
+    assert done[0]["details"] == {
+        "account_id": "123456789012", "scan_id": r["id"],
+        "snapshot_id": r["snapshot_id"], "findings": r["findings"]}
+
+
+def test_a_failed_scan_is_audited_by_reason_and_leaks_nothing():
+    client, keys, _, _, _ = make(FakeCollector(error=RuntimeError("boom-detail 123456789012")))
+    approve_requirement(client, keys)
+    connect(client, keys)
+    assert client.post("/aws/scan", headers=keys["admin"]).status_code == 502
+
+    failed = [e for e in aws_audit(client, keys["admin"]) if e["action"] == "aws.scan.failed"]
+    assert len(failed) == 1
+    assert failed[0]["details"] == {"account_id": "123456789012", "reason": "collection_failed"}
+    text = json.dumps(aws_audit(client, keys["admin"]))
+    for secret in ("boom-detail", ROLE, SECRET):
+        assert secret not in text
+
+
+def test_the_audit_never_contains_the_role_arn_or_the_external_id():
+    client, keys, _, tenant, _ = make()
+    approve_requirement(client, keys)
+    connect(client, keys)
+    client.post("/aws/scan", headers=keys["admin"])
+    text = json.dumps(aws_audit(client, keys["admin"]))
+    assert text and ROLE not in text
+    assert external_id_for(tenant, SECRET) not in text
+
+
+def test_rejected_calls_and_rate_limited_scans_write_nothing_extra():
+    client, keys, _, _, _ = make()
+    approve_requirement(client, keys)
+    for role in ("reviewer", "viewer"):
+        client.post("/aws/connection", json={"role_arn": ROLE}, headers=keys[role])
+        client.delete("/aws/connection", headers=keys[role])
+    client.post("/aws/connection", json={"role_arn": "x" * 25}, headers=keys["admin"])
+    assert aws_audit(client, keys["admin"]) == []
+
+    connect(client, keys)
+    assert client.post("/aws/scan", headers=keys["admin"]).status_code == 201
+    assert client.post("/aws/scan", headers=keys["admin"]).status_code == 429
+    actions = [e["action"] for e in aws_audit(client, keys["admin"])]
+    assert actions == ["aws.connection.set", "aws.scan.completed"]
+
+
+def test_aws_audit_entries_do_not_cross_tenants():
+    client, keys, store, _, _ = make()
+    approve_requirement(client, keys)
+    connect(client, keys)
+    client.post("/aws/scan", headers=keys["admin"])
+    _, other_key = store.create_tenant("other")
+    assert aws_audit(client, {"X-API-Key": other_key}) == []
