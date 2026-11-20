@@ -136,6 +136,15 @@ class Store:
             self._db.commit()
             return cur.rowcount
 
+    def ping(self) -> bool:
+        """True if the database answers. Used by /health, never exposes details."""
+        try:
+            with self._lock:
+                self._db.execute("SELECT 1").fetchone()
+            return True
+        except sqlite3.Error:
+            return False
+
     def delete_tenant(self, tenant_id: str, operator: str) -> dict[str, int]:
         """Permanently delete a tenant and every row that belongs to it.
 
