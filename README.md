@@ -138,7 +138,7 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 
 ### Next up (in priority order)
 
-- [ ] End-to-end run with the real Gemini API on a synthetic contract, including a prompt-injection case
+- [x] End-to-end run with the real Gemini API on a synthetic contract, including a prompt-injection case (manual script `scripts/e2e_gemini.py`)
 - [ ] Container and HTTPS via reverse proxy
 - [ ] Audit log for AWS connect, disconnect and scan actions
 - [ ] PostgreSQL instead of SQLite (migrations), database backups and tenant data deletion
