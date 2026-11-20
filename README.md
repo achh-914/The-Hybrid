@@ -2,7 +2,7 @@
 <img src="docs/logo.svg" alt="THE HYBRID" width="520">
 </p>
 
-<h3 align="center">Contract-aware cloud security, investigated by AI agents. Decided by people.</h3>
+<h3 align="center">Contract-aware cloud security. Rules decide, AI explains, people approve.</h3>
 
 <p align="center">
   Vendora reads the contracts. AEGIS maps the cloud. THE HYBRID checks whether what was promised is what is real, shows the evidence, and holds any change until a person approves.
@@ -123,9 +123,9 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 - [x] Phase 2: Unified data model.
 - [x] Phase 3: Cross-domain engine. Clause-to-infrastructure rules on synthetic AWS scenarios.
 - [x] Phase 4: Extraction, remediation advice and reports. Investigation agents are not planned for now: rules decide, the model only extracts and explains.
-- [ ] Phase 5: Dashboard.
-- [ ] Phase 6: Deployment (container, HTTPS, PostgreSQL).
-
+- [ ] Phase 5: Dashboard. Not started: the API and reports come first, and the dashboard will follow design-partner feedback.
+- [ ] Phase 6: Deployment. Container image done; HTTPS via reverse proxy and PostgreSQL pending.
+  
 ### Done
 
 - [x] Role-based access (admin, reviewer, viewer) and API key revocation
@@ -137,13 +137,14 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 - [x] Data handling document
 - [x] Per-tenant rate limit and size limit on `/contracts` (in memory, single process; a reverse proxy enforces the hard limit in production)
 - [x] Drift tests, including resolved findings
+ - [x] End-to-end run with the real Gemini API on a synthetic contract, including a prompt-injection case (manual script `scripts/e2e_gemini.py`)
+- [x] Container image (`Dockerfile`) built and smoke-tested in CI
 
 ### Next up (in priority order)
 
-- [x] End-to-end run with the real Gemini API on a synthetic contract, including a prompt-injection case (manual script `scripts/e2e_gemini.py`)
-- [ ] Container and HTTPS via reverse proxy
+- [ ] HTTPS via reverse proxy
 - [ ] PostgreSQL instead of SQLite (migrations)
-- [ ] End-to-end validation of the collector on a real AWS account
+- [ ] End-to-end validation of the collector on a real AWS account (needs a real account or a design partner's sandbox)
 - [ ] Scheduled scans and alerts on drift (needs a connected account)
 - [ ] Evaluate bucket policies and SCPs (see ADR 0001 for current limits)
 
@@ -179,7 +180,7 @@ Never commit credentials, customer contracts or real scan results. The `.gitigno
 
 ## License
 
-Copyright (c) 2026 <FULL NAME>. All rights reserved.
+Copyright (c) 2026 <Meriem Amahboul>. All rights reserved.
 This repository is proprietary. No permission is granted to use, copy, modify or distribute the code without written consent from the owner. See [LICENSE](LICENSE).
 
 ## Related projects
