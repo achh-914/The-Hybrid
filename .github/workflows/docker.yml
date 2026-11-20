@@ -1,0 +1,25 @@
+name: docker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the AEGIS commit used by CI
+        id: aegis
+        run: echo "ref=$(grep -o 'AEGIS.git@[0-9a-f]*' .github/workflows/ci.yml | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
+      - name: Build the image
+        run: docker build --build-arg AEGIS_REF=${{ steps.aegis.outputs.ref }} -t the-hybrid .
+      - name: Smoke test
+        run: |
+          SECRET=$(python3 -c "import secrets;print(secrets.token_urlsafe(48))")
+          docker run -d --name hybrid -p 8000:8000 -e HYBRID_SERVER_SECRET="$SECRET" the-hybrid
+          for i in $(seq 1 30); do curl -s -o /dev/null http://localhost:8000/docs && break; sleep 1; done
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/proposals)
+          docker logs hybrid
+          test "$code" = "401"
