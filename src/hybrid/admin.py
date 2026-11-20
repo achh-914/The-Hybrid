@@ -29,6 +29,13 @@ def main(argv=None) -> int:
     r.add_argument("tenant_id")
     r.add_argument("user_id")
 
+    d = sub.add_parser(
+        "delete-tenant", help="permanently delete a tenant and ALL of its data"
+    )
+    d.add_argument("tenant_id")
+    d.add_argument("--confirm", required=True, help="repeat the tenant id to confirm")
+    d.add_argument("--operator", required=True, help="who is doing this (recorded)")
+
     args = ap.parse_args(argv)
     store = Store(os.getenv("HYBRID_DB", "hybrid.db"))
 
@@ -37,6 +44,28 @@ def main(argv=None) -> int:
         print(f"tenant: {tenant_id}")
         print("role: admin")
         print(f"api key (shown once, keep it safe): {api_key}")
+        return 0
+
+    if args.cmd == "delete-tenant":
+        if args.confirm != args.tenant_id:
+            print(
+                "error: --confirm must repeat the tenant id exactly; nothing was deleted",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            counts = store.delete_tenant(args.tenant_id, args.operator)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        print(f"deleted tenant {args.tenant_id}")
+        for table, n in sorted(counts.items()):
+            if n:
+                print(f"  {table}: {n} row(s)")
+        print(
+            "Backups taken before now still contain this tenant until they expire "
+            "(see docs/data-handling.md)."
+        )
         return 0
 
     if args.cmd == "revoke-key":
