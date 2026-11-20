@@ -221,3 +221,5 @@ __marimo__/
 .env
 out/
 *.db
+*.db.gz
+backups/
