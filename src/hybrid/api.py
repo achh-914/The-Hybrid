@@ -17,6 +17,11 @@ from .store import Store
 MAX_CONTRACT_BODY_BYTES = 1_500_000
 
 
+def _docs_enabled() -> bool:
+    """The interactive API docs describe every route, so they are off unless asked for."""
+    return os.getenv("HYBRID_ENABLE_DOCS", "").strip().lower() in {"1", "true", "yes"}
+
+
 class ContractIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -39,7 +44,8 @@ def _default_llm():
 
 def create_app(store: Store, llm_factory=None) -> FastAPI:
     factory = llm_factory or _default_llm
-    app = FastAPI(title="THE HYBRID")
+    docs = {} if _docs_enabled() else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    app = FastAPI(title="THE HYBRID", **docs)
     app.state.contract_limiter = RateLimiter(
         max_calls=env_int("HYBRID_CONTRACTS_PER_HOUR", 30), window_seconds=3600
     )
@@ -137,6 +143,13 @@ def create_app(store: Store, llm_factory=None) -> FastAPI:
     @app.get("/audit")
     def list_audit(tenant_id: Tenant):
         return [e.model_dump(mode="json") for e in store.list_audit(tenant_id)]
+
+    @app.get("/health")
+    def health():
+        """Liveness for the container and the reverse proxy. Public, and says nothing else."""
+        if not store.ping():
+            return JSONResponse({"status": "unavailable"}, status_code=503)
+        return {"status": "ok"}
 
     register_scan_routes(app, store, current_tenant, admin_tenant)
     register_aws_routes(app, store, require_roles(Role.ADMIN))
