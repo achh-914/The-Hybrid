@@ -83,7 +83,7 @@ THE HYBRID reads configuration metadata only. It cannot read your data and canno
 | **Trust** | Cross-account role protected by a unique **External ID** (derived by the server, per tenant) |
 | **Session** | Short-lived (1 hour maximum) |
 
-> **Status:** the collector and the role template are implemented and tested against an emulated AWS account (moto). They have not yet been validated against a real AWS account, so a first connection should be made in a non-production account. The API endpoints that register your role and start a scan (`GET /aws/connection`, `POST /aws/scan`) are in progress.
+> **Status:** the collector and the role template are implemented and tested against an emulated AWS account (moto). They have not yet been validated against a real AWS account, so a first connection should be made in a non-production account. The API endpoints that register your role and start a scan (`GET`/`POST`/`DELETE /aws/connection`, `POST /aws/scan`) are implemented, admin only, and every connect, disconnect and scan is recorded in the audit trail.
 
 1. Deploy the `hybrid-readonly-role.yaml` CloudFormation template in your AWS account. It asks for two parameters: the THE HYBRID account ID and your External ID, both provided to you.
 2. Send the resulting `RoleArn` output. The server validates it before use.
@@ -129,6 +129,7 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 ### Done
 
 - [x] Role-based access (admin, reviewer, viewer) and API key revocation
+- [x] Audit log for AWS connect, disconnect and scan actions (actor from the API key; no role ARN, External ID or AWS error text is recorded)
 - [x] AWS connection and scan endpoints (admin only, server-derived External ID, scan rate limit). Tested with a fake collector and with emulated AWS (moto); **not validated on a real AWS account yet**
 - [x] Read-only collector and CloudFormation role template (same limit: not validated on a real account)
 - [x] Manual snapshot upload (`aws iam get-account-authorization-details`), which works without connecting an account
@@ -140,7 +141,6 @@ The graph engine uses NetworkX. A dedicated graph database will be considered on
 
 - [x] End-to-end run with the real Gemini API on a synthetic contract, including a prompt-injection case (manual script `scripts/e2e_gemini.py`)
 - [ ] Container and HTTPS via reverse proxy
-- [ ] Audit log for AWS connect, disconnect and scan actions
 - [ ] PostgreSQL instead of SQLite (migrations), database backups and tenant data deletion
 - [ ] End-to-end validation of the collector on a real AWS account
 - [ ] Scheduled scans and alerts on drift (needs a connected account)
