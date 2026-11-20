@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from hybrid.api import create_app  # noqa: E402
 from hybrid.store import Store  # noqa: E402
 
-PUBLIC_PATHS: set[str] = set()  # e.g. {"/health"} if you add one on purpose
+PUBLIC_PATHS: set[str] = {"/health"}  # liveness probe only: it must expose nothing sensitive
 
 
 def _concrete(path: str) -> str:
